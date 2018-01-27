@@ -1,0 +1,1 @@
+- pre-commit gitlab hook to syntax-check entries (and possibly check file availability)
