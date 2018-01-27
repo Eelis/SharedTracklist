@@ -96,11 +96,11 @@ getTracklist url = parseMarkdown . lines . downloadTracklistFile url
 
 -- Playlist generation
 
-renderEntry :: Entry -> String
-renderEntry = url
+renderEntry :: Entry -> [String]
+renderEntry e = ["#EXTINF:1," ++ title e, url e]
 
 renderEntries :: [Entry] -> String
-renderEntries = unlines . (renderEntry .)
+renderEntries = unlines . ("#EXTM3U" :) . concatMap renderEntry
 
 generatePlaylist :: String -> [Entry] -> IO String
 generatePlaylist baseUrl trackList = do
@@ -119,4 +119,4 @@ main :: IO ()
 main = do
     CmdLine{..} <- parseCmdLine . getArgs
     let baseUrl = reverse $ dropWhile (/= '/') $ reverse cmdLineUrl
-    getTracklist cmdLineUrl >>= generatePlaylist baseUrl >>= putStr
+    getTracklist cmdLineUrl >>= generatePlaylist baseUrl >>= writeFile "playlist.m3u8"
