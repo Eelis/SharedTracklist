@@ -4,13 +4,21 @@ import System.Environment (getArgs)
 import Data.Maybe (mapMaybe)
 import Data.Char (isSpace)
 import Data.Either (partitionEithers)
-import System.Random
+import System.Random (RandomGen, randomR, getStdGen)
+import Data.List (isPrefixOf, isSuffixOf, intercalate)
 import Prelude hiding ((.))
+import Data.List.Split (splitOn)
+import System.Process
 
 -- Util
 
 (.) :: Functor f => (a -> b) -> (f a -> f b)
 (.) = fmap
+
+replace old new = intercalate new . splitOn old
+
+httpDownload :: String -> IO String
+httpDownload url = readProcess "wget" ["--no-cache", "-q", "-O", "-", url] ""
 
 -- Track list
 
@@ -36,17 +44,15 @@ parseLikes :: Int -> String -> ([Username], [Username]) -- returns likes, dislik
 parseLikes lineNum = partitionEithers . (parseLike .) . words
     where
         parseLike :: String -> Either Username Username
-        parseLike ('-':'@':s) = Right s
-        parseLike ('+':'@':s) = Left s
-        parseLike ('@':s) = Left s
-        parseLike s = parseError lineNum ("malformed (dis)like: " ++ s)
+        parseLike ('-':s) = Right s
+        parseLike s = Left s
 
 parseLine :: Int -> String -> Maybe Entry
 parseLine _ "" = Nothing
 parseLine _ line | isMdHeader line = Nothing
 parseLine num ('-' : (dropWhile isSpace ->
             ('[' : (span (/= ']') -> (title, ']':
-            '(' : (span (/= ')') -> (url, ')':
+            '(' : (span (/= ')') -> (url, ')':':':
             (dropWhile isSpace -> parseLikes num -> (likes, dislikes))))))))) = Just Entry{..}
 parseLine num line = parseError num line
 
@@ -68,6 +74,26 @@ randomEntries entries = go
             let (i :: Int, gen') = randomR (0, length weighted - 1) gen
             in (weighted !! i) : go gen' (n - 1)
 
+-- Url rewriting
+
+rewriteEntry :: String -> Entry -> Entry
+rewriteEntry baseUrl e
+    | "https://github.com/" `isPrefixOf` url e, not ("?raw=true" `isSuffixOf` url e) = e{ url = url e ++ "?raw=true"}
+--    | "https://www.youtube.com/" `isPrefixOf` url e =
+    | "http:" `isPrefixOf` url e || "https:" `isPrefixOf` url e = e
+    | otherwise = rewriteEntry baseUrl e{url = baseUrl ++ url e}
+
+-- Tracklist retrieval
+
+downloadTracklistFile :: String -> IO String
+downloadTracklistFile url
+    | "https://github.com/" `isPrefixOf` url = httpDownload (replace "/blob/" "/raw/" url)
+    | "http" `isPrefixOf` url = httpDownload url
+    | otherwise = readFile url
+
+getTracklist :: String -> IO [Entry]
+getTracklist url = parseMarkdown . lines . downloadTracklistFile url
+
 -- Playlist generation
 
 renderEntry :: Entry -> String
@@ -75,6 +101,11 @@ renderEntry = url
 
 renderEntries :: [Entry] -> String
 renderEntries = unlines . (renderEntry .)
+
+generatePlaylist :: String -> [Entry] -> IO String
+generatePlaylist baseUrl trackList = do
+    stdGen <- getStdGen
+    return $ renderEntries $ rewriteEntry baseUrl . randomEntries trackList stdGen 10
 
 -- Main
 
@@ -86,13 +117,6 @@ parseCmdLine _ = error "args: url"
 
 main :: IO ()
 main = do
-
     CmdLine{..} <- parseCmdLine . getArgs
-
-    contents <- readFile cmdLineUrl
-
-    let trackList = parseMarkdown $ lines contents
-
-    stdGen <- getStdGen
-    let playList = randomEntries trackList stdGen 10
-    putStr $ renderEntries playList
+    let baseUrl = reverse $ dropWhile (/= '/') $ reverse cmdLineUrl
+    getTracklist cmdLineUrl >>= generatePlaylist baseUrl >>= putStr
