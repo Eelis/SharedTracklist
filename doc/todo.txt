@@ -1,2 +1,4 @@
 - pre-commit gitlab hook to syntax-check entries (and possibly check file availability)
 - also allow links without titles
+- support time ranges, to select tracks in mixes (and possibly apply fade in/out)
+- specify correct durations in extinf, and allow specifying desired total playlist duration
