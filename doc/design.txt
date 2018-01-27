@@ -4,7 +4,7 @@ summary:
 	- is run once a day by Eelis (or whoever)
 	- downloads track list (containing urls and like/dislikes) that we collaboratively edit in a gitlab repo, in a subset of markdown format
 	- maintains cache of downloaded tracks (needed for e.g. youtube, which vlc's native support for seems broken)
-	- picks random tracks with weights based on likes/dislikes written in track list, and generates vlc playlist
+	- picks random tracks with weights based on likes/dislikes written in track list, and generates m3u playlist for use with e.g. vlc
 
 track list file format:
 
