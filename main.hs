@@ -5,16 +5,18 @@ import Data.Maybe (mapMaybe)
 import Data.Char (isSpace)
 import Data.Either (partitionEithers)
 import System.Random (RandomGen, randomR, getStdGen)
-import Data.List (isPrefixOf, isSuffixOf, intercalate)
+import Data.List (isPrefixOf, isSuffixOf, isInfixOf, intercalate, find)
 import Prelude hiding ((.))
 import Data.List.Split (splitOn)
-import System.Process
+import System.Process (readProcess, callProcess)
+import System.Directory (getDirectoryContents, getCurrentDirectory, setCurrentDirectory)
 
 -- Util
 
 (.) :: Functor f => (a -> b) -> (f a -> f b)
 (.) = fmap
 
+replace :: Eq a => [a] -> [a] -> [a] -> [a]
 replace old new = intercalate new . splitOn old
 
 httpDownload :: String -> IO String
@@ -41,7 +43,7 @@ parseError :: Int -> String -> a
 parseError num msg = error $ "line " ++ show num ++ ": parse error: " ++ msg
 
 parseLikes :: Int -> String -> ([Username], [Username]) -- returns likes, dislikes
-parseLikes lineNum = partitionEithers . (parseLike .) . words
+parseLikes _lineNum = partitionEithers . (parseLike .) . words
     where
         parseLike :: String -> Either Username Username
         parseLike ('-':s) = Right s
@@ -74,13 +76,46 @@ randomEntries entries = go
             let (i :: Int, gen') = randomR (0, length weighted - 1) gen
             in (weighted !! i) : go gen' (n - 1)
 
+-- Youtube
+
+youtubePrefix :: String
+youtubePrefix = "https://www.youtube.com/watch?v="
+
+findCachedYoutubeTrack :: String -> IO (Maybe String)
+findCachedYoutubeTrack videoId = do
+    list <- getDirectoryContents "cache"
+    return $ ("cache/" ++) . find (videoId `isInfixOf`) list
+
+downloadYoutubeTrack :: String -> IO ()
+downloadYoutubeTrack url = do
+    cwd <- getCurrentDirectory
+    setCurrentDirectory "cache"
+    callProcess "youtube-dl" ["-x", "--audio-format", "mp3", url]
+    setCurrentDirectory cwd
+
+findOrAddYoutubeTrack :: String -> IO String
+findOrAddYoutubeTrack url = do
+    let videoId = drop (length youtubePrefix) url
+    cached <- findCachedYoutubeTrack videoId
+    case cached of
+        Just filename -> return filename
+        Nothing -> do
+            downloadYoutubeTrack url
+            f <- findCachedYoutubeTrack videoId -- should exist now
+            case f of
+                Nothing -> error "youtube-dl failed"
+                Just f' -> return f'
+
 -- Url rewriting
 
-rewriteEntry :: String -> Entry -> Entry
+rewriteEntry :: String -> Entry -> IO Entry
 rewriteEntry baseUrl e
-    | "https://github.com/" `isPrefixOf` url e, not ("?raw=true" `isSuffixOf` url e) = e{ url = url e ++ "?raw=true"}
---    | "https://www.youtube.com/" `isPrefixOf` url e =
-    | "http:" `isPrefixOf` url e || "https:" `isPrefixOf` url e = e
+    | "https://github.com/" `isPrefixOf` url e, not ("?raw=true" `isSuffixOf` url e) =
+        return e{ url = url e ++ "?raw=true"}
+    | youtubePrefix `isPrefixOf` url e = do
+        filename <- findOrAddYoutubeTrack (url e)
+        return e{url = filename}
+    | "http:" `isPrefixOf` url e || "https:" `isPrefixOf` url e = return e
     | otherwise = rewriteEntry baseUrl e{url = baseUrl ++ url e}
 
 -- Tracklist retrieval
@@ -97,7 +132,7 @@ getTracklist url = parseMarkdown . lines . downloadTracklistFile url
 -- Playlist generation
 
 renderEntry :: Entry -> [String]
-renderEntry e = ["#EXTINF:1," ++ title e, url e]
+renderEntry e = ["#EXTINF:1," ++ replace "," " " (title e), url e]
 
 renderEntries :: [Entry] -> String
 renderEntries = unlines . ("#EXTM3U" :) . concatMap renderEntry
@@ -105,7 +140,8 @@ renderEntries = unlines . ("#EXTM3U" :) . concatMap renderEntry
 generatePlaylist :: String -> [Entry] -> IO String
 generatePlaylist baseUrl trackList = do
     stdGen <- getStdGen
-    return $ renderEntries $ rewriteEntry baseUrl . randomEntries trackList stdGen 10
+    let selection = randomEntries trackList stdGen 10
+    renderEntries . mapM (rewriteEntry baseUrl) selection
 
 -- Main
 
