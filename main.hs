@@ -137,7 +137,7 @@ rewriteTrack baseUrl e
             filename <- findOrAddYoutubeTrack full
             return e{url = filename}
         -- leave other urls as-is:
-        | otherwise = return e
+        | otherwise = return e{url = full}
     where
         full = (if isRelative (url e) then baseUrl else "") ++ url e
 
