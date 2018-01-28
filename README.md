@@ -1,3 +1,5 @@
+## Summary
+
 This tool:
 
 - is run once a day
@@ -17,13 +19,20 @@ Benefits of the approach:
 - easy to perform edits such as "remove all of X's votes" when X leaves the company
 - easy to run a link checker on the html-rendered track list
 
-Prerequisites:
+## Prerequisites
 
 - wget
 - youtube-dl
 - ghc
 
-Usage:
+## Usage
 
     runhaskell main.hs url/for/tracklist.md
-    vlc playlist.m3u8
+
+The url may also be a path.
+
+## Output
+
+- playlist.m3u8
+- flat-tracklist.txt
+- cache/*
