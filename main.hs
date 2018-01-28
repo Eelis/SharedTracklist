@@ -23,31 +23,34 @@ replace old new = intercalate new . splitOn old
 httpDownload :: String -> IO String
 httpDownload url = readProcess "wget" ["--no-cache", "-q", "-O", "-", url] ""
 
--- Track list
+-- Tracklist
 
 type Username = String
 
 newtype Likes = Likes { likes :: Map Username Bool }
 
-
 data Track = Track { title, url :: String, trackLikes :: Likes }
 data Header = Header { headerLevel :: Int, headerLikes :: Likes }
-
-instance Show Likes where
-    show (Likes m)
-        | Map.null m = ""
-        | otherwise = ": " ++ unwords (map f (Map.toList m))
-        where
-            f (u, b) = (if b then "" else "-") ++ u
-
-instance Show Track where
-    show Track{..} = "- [" ++ title ++ "](" ++ url ++ ")" ++ show trackLikes
 
 score :: Likes -> Int
 score (Likes m) = likes - dislikes * 2
     where
         likes = length $ filter snd (Map.toList m)
         dislikes = Map.size m - likes
+
+addLikes :: Likes -> Track -> Track
+addLikes (Likes m) t = t{trackLikes = Likes $ Map.union (likes $ trackLikes t) m}
+
+assignGroupLikes :: [Either Track Header] -> [Track]
+assignGroupLikes = go
+    where
+        go :: [Either Track Header] -> [Track]
+        go [] = []
+        go (Left t : more) = t : go more
+        go (Right Header{..} : (span (isBelow headerLevel) -> (content, rest))) =
+            (addLikes headerLikes . go content) ++ go rest
+        isBelow _ (Left _) = True
+        isBelow n (Right Header{..}) = headerLevel > n
 
 -- Parsing
 
@@ -65,29 +68,28 @@ parseLikes _ = Likes mempty
 parseLine :: Int -> String -> Maybe (Either Track Header)
 parseLine _ [] = Nothing
 parseLine _ ('#':(span (=='#') -> (octos, (dropWhile (/= ':') ->
-            (parseLikes -> headerLikes))))) = Just (Right Header{..})
-    where headerLevel = length octos + 1
+            (parseLikes -> headerLikes))))) = Just (Right Header{headerLevel = length octos + 1, ..})
 parseLine _ ('-' : (dropWhile isSpace ->
             ('[' : (span (/= ']') -> (title, ']':
             '(' : (span (/= ')') -> (url, ')':(parseLikes -> trackLikes)))))))) = Just (Left Track{..})
 parseLine num line = parseError num line
 
-addLikes :: Likes -> Track -> Track
-addLikes (Likes m) t = t{trackLikes = Likes $ Map.union (likes $ trackLikes t) m}
+parseMarkdown :: String -> [Track]
+parseMarkdown = assignGroupLikes . mapMaybe (uncurry parseLine) . zip [1..] . lines
 
-assignGroupLikes :: [Either Track Header] -> [Track]
-assignGroupLikes = go
-    where
-        go :: [Either Track Header] -> [Track]
-        go [] = []
-        go (Left t : more) = t : go more
-        go (Right Header{..} : (span (isBelow headerLevel) -> (content, rest))) =
-            (addLikes headerLikes . go content) ++ go rest
-        isBelow _ (Left _) = True
-        isBelow n (Right Header{..}) = headerLevel > n
+-- Rendering
 
-parseMarkdown :: [String] -> [Track]
-parseMarkdown = assignGroupLikes . mapMaybe (uncurry parseLine) . zip [1..]
+renderTrack :: Track -> [String]
+renderTrack e = ["#EXTINF:1," ++ replace "," " " (title e), url e]
+
+renderTracks :: [Track] -> String
+renderTracks = unlines . ("#EXTM3U" :) . concatMap renderTrack
+
+instance Show Likes where
+    show (Likes m) = if Map.null m then "" else ": " ++ unwords (f . Map.toList m)
+        where f (u, b) = (if b then "" else "-") ++ u
+
+instance Show Track where show Track{..} = "- [" ++ title ++ "](" ++ url ++ ")" ++ show trackLikes
 
 -- Youtube
 
@@ -140,7 +142,7 @@ downloadTracklistFile url
     | otherwise = readFile url
 
 getTracklist :: String -> IO [Track]
-getTracklist url = parseMarkdown . lines . downloadTracklistFile url
+getTracklist url = parseMarkdown . downloadTracklistFile url
 
 -- Playlist generation
 
@@ -156,12 +158,6 @@ randomTracks tracks = go
         go gen n =
             let (i :: Int, gen') = randomR (0, length weighted - 1) gen
             in (weighted !! i) : go gen' (n - 1)
-
-renderTrack :: Track -> [String]
-renderTrack e = ["#EXTINF:1," ++ replace "," " " (title e), url e]
-
-renderTracks :: [Track] -> String
-renderTracks = unlines . ("#EXTM3U" :) . concatMap renderTrack
 
 generatePlaylist :: String -> [Track] -> IO String
 generatePlaylist baseUrl trackList = do
