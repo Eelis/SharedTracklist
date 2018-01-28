@@ -2,7 +2,7 @@
 
 ### Vette tracks
 - [bla](https://github.com/Eelis/bla/blob/master/bla.mp3): Eelis
-- [Melodic Techno Mix 2016 (Worakls, N'to, 10dens...)](https://www.youtube.com/watch?v=hd5ogmfPQVo): Eelis
+- [N'to - Note Blanche (Official Video)](https://www.youtube.com/watch?v=6fpQtKP92BI): Eelis
 
 # Vatzige tracks: Blub
 - [kip](vis): Jimmy -Eelis
