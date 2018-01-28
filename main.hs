@@ -170,7 +170,7 @@ randomTracks tracks = go
 generatePlaylist :: String -> [Track] -> IO String
 generatePlaylist baseUrl trackList = do
     stdGen <- getStdGen
-    let selection = randomTracks trackList stdGen 10
+    let selection = randomTracks trackList stdGen 100
     renderTracks . mapM (rewriteTrack baseUrl) selection
 
 -- Main
