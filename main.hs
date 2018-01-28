@@ -3,13 +3,14 @@
 import System.Environment (getArgs)
 import Data.Maybe (mapMaybe)
 import Data.Char (isSpace)
-import Data.Either (partitionEithers)
 import System.Random (RandomGen, randomR, getStdGen)
 import Data.List (isPrefixOf, isSuffixOf, isInfixOf, intercalate, find)
 import Prelude hiding ((.))
 import Data.List.Split (splitOn)
 import System.Process (readProcess, callProcess)
 import System.Directory (getDirectoryContents, getCurrentDirectory, setCurrentDirectory)
+import qualified Data.Map as Map
+import Data.Map (Map)
 
 -- Util
 
@@ -26,55 +27,55 @@ httpDownload url = readProcess "wget" ["--no-cache", "-q", "-O", "-", url] ""
 
 type Username = String
 
-data Entry = Entry
-    { title, url :: String
-    , likes, dislikes :: [Username] }
-    deriving Show
+type Likes = Map Username Bool
 
-score :: Entry -> Int
-score Entry{..} = length likes - length dislikes * 2
+data Track = Track { title, url :: String, trackLikes :: Likes }
+data Header = Header { headerLevel :: Int, headerLikes :: Likes }
+score :: Likes -> Int
+score m = likes - dislikes * 2
+    where
+        likes = length $ filter snd (Map.toList m)
+        dislikes = Map.size m - likes
 
 -- Parsing
-
-isMdHeader :: String -> Bool
-isMdHeader s = length s /= 0 && head s == '#'
 
 parseError :: Int -> String -> a
 parseError num msg = error $ "line " ++ show num ++ ": parse error: " ++ msg
 
-parseLikes :: Int -> String -> ([Username], [Username]) -- returns likes, dislikes
-parseLikes _lineNum = partitionEithers . (parseLike .) . words
+parseLikes :: String -> Likes
+parseLikes (':': (dropWhile isSpace -> x)) = Map.fromList $ parseLike . words x
     where
-        parseLike :: String -> Either Username Username
-        parseLike ('-':s) = Right s
-        parseLike s = Left s
+        parseLike :: String -> (Username, Bool)
+        parseLike ('-':s) = (s, False)
+        parseLike s = (s, True)
+parseLikes _ = mempty
 
-parseLine :: Int -> String -> Maybe Entry
-parseLine _ "" = Nothing
-parseLine _ line | isMdHeader line = Nothing
-parseLine num ('-' : (dropWhile isSpace ->
+parseLine :: Int -> String -> Maybe (Either Track Header)
+parseLine _ [] = Nothing
+parseLine _ ('#':(span (=='#') -> (octos, (dropWhile (/= ':') ->
+            (parseLikes -> headerLikes))))) = Just (Right Header{..})
+    where headerLevel = length octos + 1
+parseLine _ ('-' : (dropWhile isSpace ->
             ('[' : (span (/= ']') -> (title, ']':
-            '(' : (span (/= ')') -> (url, ')':':':
-            (dropWhile isSpace -> parseLikes num -> (likes, dislikes))))))))) = Just Entry{..}
+            '(' : (span (/= ')') -> (url, ')':(parseLikes -> trackLikes)))))))) = Just (Left Track{..})
 parseLine num line = parseError num line
 
-parseMarkdown :: [String] -> [Entry]
-parseMarkdown = mapMaybe (uncurry parseLine) . zip [1..]
+addLikes :: Likes -> Track -> Track
+addLikes l t = t{trackLikes = mappend (trackLikes t) l}
 
--- Track selection
-
-randomEntries :: forall g . RandomGen g => [Entry] -> g -> Int -> [Entry]
-randomEntries entries = go
+assignGroupLikes :: [Either Track Header] -> [Track]
+assignGroupLikes = go
     where
-        weigh :: Entry -> [Entry]
-        weigh x = replicate (score x) x
-        weighted = entries >>= weigh
+        go :: [Either Track Header] -> [Track]
+        go [] = []
+        go (Left t : more) = t : go more
+        go (Right Header{..} : (span (isBelow headerLevel) -> (content, rest))) =
+            (addLikes headerLikes . go content) ++ go rest
+        isBelow _ (Left _) = True
+        isBelow n (Right Header{..}) = headerLevel > n
 
-        go :: g -> Int -> [Entry]
-        go _ 0 = []
-        go gen n =
-            let (i :: Int, gen') = randomR (0, length weighted - 1) gen
-            in (weighted !! i) : go gen' (n - 1)
+parseMarkdown :: [String] -> [Track]
+parseMarkdown = assignGroupLikes . mapMaybe (uncurry parseLine) . zip [1..]
 
 -- Youtube
 
@@ -108,15 +109,15 @@ findOrAddYoutubeTrack url = do
 
 -- Url rewriting
 
-rewriteEntry :: String -> Entry -> IO Entry
-rewriteEntry baseUrl e
+rewriteTrack :: String -> Track -> IO Track
+rewriteTrack baseUrl e
     | "https://github.com/" `isPrefixOf` url e, not ("?raw=true" `isSuffixOf` url e) =
         return e{ url = url e ++ "?raw=true"}
     | youtubePrefix `isPrefixOf` url e = do
         filename <- findOrAddYoutubeTrack (url e)
         return e{url = filename}
     | "http:" `isPrefixOf` url e || "https:" `isPrefixOf` url e = return e
-    | otherwise = rewriteEntry baseUrl e{url = baseUrl ++ url e}
+    | otherwise = rewriteTrack baseUrl e{url = baseUrl ++ url e}
 
 -- Tracklist retrieval
 
@@ -126,22 +127,35 @@ downloadTracklistFile url
     | "http" `isPrefixOf` url = httpDownload url
     | otherwise = readFile url
 
-getTracklist :: String -> IO [Entry]
+getTracklist :: String -> IO [Track]
 getTracklist url = parseMarkdown . lines . downloadTracklistFile url
 
 -- Playlist generation
 
-renderEntry :: Entry -> [String]
-renderEntry e = ["#EXTINF:1," ++ replace "," " " (title e), url e]
+randomTracks :: forall g . RandomGen g => [Track] -> g -> Int -> [Track]
+randomTracks tracks = go
+    where
+        weigh :: Track -> [Track]
+        weigh x = replicate (score $ trackLikes x) x
+        weighted = tracks >>= weigh
 
-renderEntries :: [Entry] -> String
-renderEntries = unlines . ("#EXTM3U" :) . concatMap renderEntry
+        go :: g -> Int -> [Track]
+        go _ 0 = []
+        go gen n =
+            let (i :: Int, gen') = randomR (0, length weighted - 1) gen
+            in (weighted !! i) : go gen' (n - 1)
 
-generatePlaylist :: String -> [Entry] -> IO String
+renderTrack :: Track -> [String]
+renderTrack e = ["#EXTINF:1," ++ replace "," " " (title e), url e]
+
+renderTracks :: [Track] -> String
+renderTracks = unlines . ("#EXTM3U" :) . concatMap renderTrack
+
+generatePlaylist :: String -> [Track] -> IO String
 generatePlaylist baseUrl trackList = do
     stdGen <- getStdGen
-    let selection = randomEntries trackList stdGen 10
-    renderEntries . mapM (rewriteEntry baseUrl) selection
+    let selection = randomTracks trackList stdGen 10
+    renderTracks . mapM (rewriteTrack baseUrl) selection
 
 -- Main
 
