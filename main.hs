@@ -27,12 +27,24 @@ httpDownload url = readProcess "wget" ["--no-cache", "-q", "-O", "-", url] ""
 
 type Username = String
 
-type Likes = Map Username Bool
+newtype Likes = Likes { likes :: Map Username Bool }
+
 
 data Track = Track { title, url :: String, trackLikes :: Likes }
 data Header = Header { headerLevel :: Int, headerLikes :: Likes }
+
+instance Show Likes where
+    show (Likes m)
+        | Map.null m = ""
+        | otherwise = ": " ++ unwords (map f (Map.toList m))
+        where
+            f (u, b) = (if b then "" else "-") ++ u
+
+instance Show Track where
+    show Track{..} = "- [" ++ title ++ "](" ++ url ++ ")" ++ show trackLikes
+
 score :: Likes -> Int
-score m = likes - dislikes * 2
+score (Likes m) = likes - dislikes * 2
     where
         likes = length $ filter snd (Map.toList m)
         dislikes = Map.size m - likes
@@ -43,12 +55,12 @@ parseError :: Int -> String -> a
 parseError num msg = error $ "line " ++ show num ++ ": parse error: " ++ msg
 
 parseLikes :: String -> Likes
-parseLikes (':': (dropWhile isSpace -> x)) = Map.fromList $ parseLike . words x
+parseLikes (':': (dropWhile isSpace -> x)) = Likes $ Map.fromList $ parseLike . words x
     where
         parseLike :: String -> (Username, Bool)
         parseLike ('-':s) = (s, False)
         parseLike s = (s, True)
-parseLikes _ = mempty
+parseLikes _ = Likes mempty
 
 parseLine :: Int -> String -> Maybe (Either Track Header)
 parseLine _ [] = Nothing
@@ -61,7 +73,7 @@ parseLine _ ('-' : (dropWhile isSpace ->
 parseLine num line = parseError num line
 
 addLikes :: Likes -> Track -> Track
-addLikes l t = t{trackLikes = mappend (trackLikes t) l}
+addLikes (Likes m) t = t{trackLikes = Likes $ Map.union (likes $ trackLikes t) m}
 
 assignGroupLikes :: [Either Track Header] -> [Track]
 assignGroupLikes = go
@@ -91,7 +103,7 @@ downloadYoutubeTrack :: String -> IO ()
 downloadYoutubeTrack url = do
     cwd <- getCurrentDirectory
     setCurrentDirectory "cache"
-    callProcess "youtube-dl" ["-x", "--audio-format", "mp3", url]
+    callProcess "youtube-dl" ["-x", url]
     setCurrentDirectory cwd
 
 findOrAddYoutubeTrack :: String -> IO String
@@ -169,4 +181,6 @@ main :: IO ()
 main = do
     CmdLine{..} <- parseCmdLine . getArgs
     let baseUrl = reverse $ dropWhile (/= '/') $ reverse cmdLineUrl
-    getTracklist cmdLineUrl >>= generatePlaylist baseUrl >>= writeFile "playlist.m3u8"
+    trackList <- getTracklist cmdLineUrl
+    writeFile "flat-tracklist.txt" $ unlines $ show . trackList
+    generatePlaylist baseUrl trackList >>= writeFile "playlist.m3u8"
