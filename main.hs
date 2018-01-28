@@ -8,7 +8,7 @@ import Data.List (isPrefixOf, isSuffixOf, isInfixOf, intercalate, find)
 import Prelude hiding ((.))
 import Data.List.Split (splitOn)
 import System.Process (readProcess, callProcess)
-import System.Directory (getDirectoryContents, getCurrentDirectory, setCurrentDirectory)
+import qualified System.Directory as Dir
 import qualified Data.Map as Map
 import Data.Map (Map)
 
@@ -98,15 +98,15 @@ youtubePrefix = "https://www.youtube.com/watch?v="
 
 findCachedYoutubeTrack :: String -> IO (Maybe String)
 findCachedYoutubeTrack videoId = do
-    list <- getDirectoryContents "cache"
+    list <- Dir.getDirectoryContents "cache"
     return $ ("cache/" ++) . find (videoId `isInfixOf`) list
 
 downloadYoutubeTrack :: String -> IO ()
 downloadYoutubeTrack url = do
-    cwd <- getCurrentDirectory
-    setCurrentDirectory "cache"
+    cwd <- Dir.getCurrentDirectory
+    Dir.setCurrentDirectory "cache"
     callProcess "youtube-dl" ["-x", url]
-    setCurrentDirectory cwd
+    Dir.setCurrentDirectory cwd
 
 findOrAddYoutubeTrack :: String -> IO String
 findOrAddYoutubeTrack url = do
@@ -176,6 +176,7 @@ parseCmdLine _ = error "args: url"
 main :: IO ()
 main = do
     CmdLine{..} <- parseCmdLine . getArgs
+    Dir.createDirectoryIfMissing False "cache"
     let baseUrl = reverse $ dropWhile (/= '/') $ reverse cmdLineUrl
     trackList <- getTracklist cmdLineUrl
     writeFile "flat-tracklist.txt" $ unlines $ show . trackList
