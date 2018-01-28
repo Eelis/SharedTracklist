@@ -123,15 +123,23 @@ findOrAddYoutubeTrack url = do
 
 -- Url rewriting
 
+isRelative :: String -> Bool
+isRelative x = not $ any (`isPrefixOf` x) ["https:", "http:"]
+
 rewriteTrack :: String -> Track -> IO Track
 rewriteTrack baseUrl e
-    | "https://github.com/" `isPrefixOf` url e, not ("?raw=true" `isSuffixOf` url e) =
-        return e{ url = url e ++ "?raw=true"}
-    | youtubePrefix `isPrefixOf` url e = do
-        filename <- findOrAddYoutubeTrack (url e)
-        return e{url = filename}
-    | "http:" `isPrefixOf` url e || "https:" `isPrefixOf` url e = return e
-    | otherwise = rewriteTrack baseUrl e{url = baseUrl ++ url e}
+        -- rewrite github urls to point to the raw file:
+        | "https://github.com/" `isPrefixOf` full
+        , not ("?raw=true" `isSuffixOf` full) =
+            return e{ url = full ++ "?raw=true"}
+        -- download youtube files into cache:
+        | youtubePrefix `isPrefixOf` full = do
+            filename <- findOrAddYoutubeTrack full
+            return e{url = filename}
+        -- leave other urls as-is:
+        | otherwise = return e
+    where
+        full = (if isRelative (url e) then baseUrl else "") ++ url e
 
 -- Tracklist retrieval
 
