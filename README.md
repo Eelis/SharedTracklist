@@ -10,9 +10,9 @@ This tool:
 
 Benefits of the approach:
 
-- subset of markdown means list is rendered nicely on gitlab, no need for separate hosting
-- we get all the features of text-based version control for free: backup, diff, blame, revert, fork, etc.
-- natural grouping using section headers (e.g. "### Mahtz Mixes: Jimmy Bob"), with support for group-(dis)likes
+- basing track list on markdown means list is automatically rendered nicely as html on gitlab, no need for separate render step
+- plain text track list in git repo provides all the benefits of text-based version control: diff, history, blame, revert, fork, etc.
+- (dis)likes declared on section headers (e.g. "### Mahtz Mixes: Jimmy Bob") enable natural mass-(dis)like support with hierarchical overrides
 - not committed to any playback/streaming system. m3u8 playlists importable with everything
 - easy to perform edits such as "remove all of X's votes" when X leaves the company
 - easy to run a link checker on the html-rendered track list
