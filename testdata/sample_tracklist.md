@@ -1,7 +1,7 @@
 - [nobody](nothing)
 
 ### Vette tracks
-- [bla](https://github.com/Eelis/bla/blob/master/bla.mp3): Eelis
+- [bla](http://eel.is/bla.opus): Eelis
 - [N'to - Note Blanche (Official Video)](https://www.youtube.com/watch?v=6fpQtKP92BI): Eelis
 
 # Vatzige tracks: Blub
@@ -9,4 +9,4 @@
 
 ## Wazig lol: Pietje
 - [yada](bla): -Alice
-- [ding](dong): Alice -Blub
+- [ding](tracks/hmmz.mp3): Alice -Blub Jimmy
