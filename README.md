@@ -23,7 +23,7 @@ Benefits of the approach:
 
 - wget
 - youtube-dl
-- ghc
+- ghc & some Cabal packages
 
 ## Usage
 

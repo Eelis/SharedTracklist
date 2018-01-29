@@ -4,7 +4,7 @@ import System.Environment (getArgs)
 import Data.Maybe (mapMaybe)
 import Data.Char (isSpace)
 import System.Random (RandomGen, randomR, getStdGen)
-import Data.List (isPrefixOf, isSuffixOf, isInfixOf, intercalate, find)
+import Data.List (isPrefixOf, isSuffixOf, isInfixOf, intercalate, find, nub)
 import Prelude hiding ((.))
 import Data.List.Split (splitOn)
 import System.Process (readProcess, callProcess)
@@ -27,9 +27,9 @@ httpDownload url = readProcess "wget" ["--no-cache", "-q", "-O", "-", url] ""
 
 type Username = String
 
-newtype Likes = Likes { likes :: Map Username Bool }
+newtype Likes = Likes { likes :: Map Username Bool } deriving Eq
 
-data Track = Track { title, url :: String, trackLikes :: Likes }
+data Track = Track { title, url :: String, trackLikes :: Likes } deriving Eq
 data Header = Header { headerLevel :: Int, headerLikes :: Likes }
 
 score :: Likes -> Int
@@ -38,8 +38,11 @@ score (Likes m) = likes - dislikes * 2
         likes = length $ filter snd (Map.toList m)
         dislikes = Map.size m - likes
 
+overrideLikes :: Likes -> Likes -> Likes
+overrideLikes (Likes old) (Likes new) = Likes $ Map.union new old -- Map.union's bias is used here
+
 addLikes :: Likes -> Track -> Track
-addLikes (Likes m) t = t{trackLikes = Likes $ Map.union (likes $ trackLikes t) m}
+addLikes l t = t{trackLikes = overrideLikes l (trackLikes t)}
 
 assignGroupLikes :: [Either Track Header] -> [Track]
 assignGroupLikes = go
@@ -156,7 +159,7 @@ getTracklist url = parseMarkdown . downloadTracklistFile url
 -- Playlist generation
 
 randomTracks :: forall g . RandomGen g => [Track] -> g -> Int -> [Track]
-randomTracks tracks = go
+randomTracks tracks = (nub .) . go
     where
         weigh :: Track -> [Track]
         weigh x = replicate (score $ trackLikes x) x
