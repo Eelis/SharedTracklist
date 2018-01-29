@@ -146,6 +146,7 @@ rewriteTrack baseUrl e
 downloadTracklistFile :: String -> IO String
 downloadTracklistFile url
     | "https://github.com/" `isPrefixOf` url = httpDownload (replace "/blob/" "/raw/" url)
+    | "https://gitlab." `isPrefixOf` url = httpDownload (replace "/blob/" "/raw/" url)
     | "http" `isPrefixOf` url = httpDownload url
     | otherwise = readFile url
 
