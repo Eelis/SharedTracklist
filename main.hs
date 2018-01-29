@@ -1,16 +1,16 @@
-{-# LANGUAGE RecordWildCards, ViewPatterns, RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards, ViewPatterns, RankNTypes, ScopedTypeVariables, LambdaCase #-}
 
-import System.Environment (getArgs)
-import Data.Maybe (mapMaybe)
-import Data.Char (isSpace)
-import System.Random (RandomGen, randomR, getStdGen)
-import Data.List (isPrefixOf, isSuffixOf, isInfixOf, intercalate, find, nub)
-import Prelude hiding ((.))
-import Data.List.Split (splitOn)
-import System.Process (readProcess, callProcess)
 import qualified System.Directory as Dir
 import qualified Data.Map as Map
+import System.Environment (getArgs)
+import System.Process (readProcess, callProcess)
+import System.Random (RandomGen, randomR, getStdGen)
 import Data.Map (Map)
+import Data.Maybe (mapMaybe)
+import Data.Char (isSpace)
+import Data.List (isPrefixOf, isSuffixOf, isInfixOf, intercalate, find, nub)
+import Data.List.Split (splitOn)
+import Prelude hiding ((.))
 
 -- Util
 
@@ -89,8 +89,8 @@ renderTracks :: [Track] -> String
 renderTracks = unlines . ("#EXTM3U" :) . concatMap renderTrack
 
 instance Show Likes where
-    show (Likes m) = if Map.null m then "" else ": " ++ unwords (f . Map.toList m)
-        where f (u, b) = (if b then "" else "-") ++ u
+    show (Likes m) = if Map.null m then "" else ": " ++ unwords (showLike . Map.toList m)
+        where showLike (u, b) = (if b then "" else "-") ++ u
 
 instance Show Track where show Track{..} = "- [" ++ title ++ "](" ++ url ++ ")" ++ show trackLikes
 
@@ -112,17 +112,12 @@ downloadYoutubeTrack url = do
     Dir.setCurrentDirectory cwd
 
 findOrAddYoutubeTrack :: String -> IO String
-findOrAddYoutubeTrack url = do
-    let videoId = drop (length youtubePrefix) url
-    cached <- findCachedYoutubeTrack videoId
-    case cached of
-        Just filename -> return filename
-        Nothing -> do
-            downloadYoutubeTrack url
-            f <- findCachedYoutubeTrack videoId -- should exist now
-            case f of
-                Nothing -> error "youtube-dl failed"
-                Just f' -> return f'
+findOrAddYoutubeTrack url = findCachedYoutubeTrack videoId >>= \case
+    Just filename -> return filename
+    Nothing -> downloadYoutubeTrack url >> findCachedYoutubeTrack videoId >>= \case
+        Just f -> return f
+        Nothing -> error $ "youtube-dl failed for " ++ url
+  where videoId = drop (length youtubePrefix) url
 
 -- Url rewriting
 
@@ -158,18 +153,22 @@ getTracklist url = parseMarkdown . downloadTracklistFile url
 
 -- Playlist generation
 
-randomTracks :: forall g . RandomGen g => [Track] -> g -> Int -> [Track]
+randomTracks :: forall gen . RandomGen gen => [Track] -> gen -> Int -> [Track]
 randomTracks tracks = (nub .) . go
     where
         weigh :: Track -> [Track]
         weigh x = replicate (score $ trackLikes x) x
+
+        weighted :: [Track]
         weighted = tracks >>= weigh
 
-        go :: g -> Int -> [Track]
+        randomIndex :: gen -> (Int, gen)
+        randomIndex = randomR (0, length weighted - 1)
+
+        go :: gen -> Int -> [Track]
         go _ 0 = []
-        go gen n =
-            let (i :: Int, gen') = randomR (0, length weighted - 1) gen
-            in (weighted !! i) : go gen' (n - 1)
+        go g n = (weighted !! i) : go g' (n - 1)
+            where (i, g') = randomIndex g
 
 generatePlaylist :: String -> [Track] -> IO String
 generatePlaylist baseUrl trackList = do
