@@ -10,6 +10,8 @@ import Data.Maybe (mapMaybe)
 import Data.Char (isSpace)
 import Data.List (isPrefixOf, isSuffixOf, isInfixOf, intercalate, find, nub)
 import Data.List.Split (splitOn)
+import Control.Monad.State (StateT(..), evalState, State, replicateM)
+import Data.Functor.Identity (Identity(..))
 import Prelude hiding ((.))
 
 -- Util
@@ -22,6 +24,9 @@ replace old new = intercalate new . splitOn old
 
 httpDownload :: String -> IO String
 httpDownload url = readProcess "wget" ["--no-cache", "-q", "-O", "-", url] ""
+
+randomIndex :: RandomGen g => Int -> State g Int
+randomIndex size = StateT $ Identity . randomR (0, size - 1)
 
 -- Tracklist
 
@@ -153,27 +158,17 @@ getTracklist url = parseMarkdown . downloadTracklistFile url
 
 -- Playlist generation
 
-randomTracks :: forall gen . RandomGen gen => [Track] -> gen -> Int -> [Track]
-randomTracks tracks = (nub .) . go
+randomTracks :: RandomGen gen => [Track] -> Int -> State gen [Track]
+randomTracks tracks n = nub . replicateM n ((weighted !!) . randomIndex (length weighted))
     where
         weigh :: Track -> [Track]
-        weigh x = replicate (score $ trackLikes x) x
-
+        weigh t@Track{..} = replicate (score trackLikes) t
         weighted :: [Track]
         weighted = tracks >>= weigh
 
-        randomIndex :: gen -> (Int, gen)
-        randomIndex = randomR (0, length weighted - 1)
-
-        go :: gen -> Int -> [Track]
-        go _ 0 = []
-        go g n = (weighted !! i) : go g' (n - 1)
-            where (i, g') = randomIndex g
-
 generatePlaylist :: String -> [Track] -> IO String
 generatePlaylist baseUrl trackList = do
-    stdGen <- getStdGen
-    let selection = randomTracks trackList stdGen 100
+    selection <- evalState (randomTracks trackList 100) . getStdGen
     renderTracks . mapM (rewriteTrack baseUrl) selection
 
 -- Main
